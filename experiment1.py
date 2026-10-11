@@ -391,6 +391,12 @@ def train_and_evaluate(X, y, test_size=0.3, random_state=42):
 
     print(f"\n最佳分类器：{best_name}，准确率：{best_acc:.4f}")
 
+    # 保存最佳模型和标准化器
+    import pickle
+    with open("best_model.pkl", "wb") as f:
+        pickle.dump({"model": best_clf, "scaler": scaler}, f)
+    print("✅ 最佳模型已保存为 best_model.pkl")
+
     return best_name, best_clf, scaler, best_cm, results
 
 
@@ -535,12 +541,39 @@ def main():
     parser.add_argument("--plot", action="store_true", help="是否绘图")
     parser.add_argument("--record", type=str, default=None, help="录音保存路径")
     parser.add_argument("--duration", type=float, default=1.0, help="录音时长/秒")
+    # 👇 新增：在这里添加 --predict 参数
+    parser.add_argument("--predict", type=str, default=None, help="输入一个新的 wav 文件进行识别")
 
     args = parser.parse_args()
 
     # 录音模式
     if args.record:
         record_wav(args.record, duration=args.duration)
+        return
+
+    # 👇 新增：预测识别模式（必须放在训练模式之前！）
+    if args.predict:
+        import pickle
+        # 1. 加载训练好的模型
+        try:
+            with open("best_model.pkl", "rb") as f:
+                data = pickle.load(f)
+                best_clf = data["model"]
+                scaler = data["scaler"]
+        except FileNotFoundError:
+            print("❌ 错误：没有找到 best_model.pkl，请先运行 python experiment1.py --data_dir data --plot 训练模型！")
+            return
+
+        # 2. 读取新音频并提取特征
+        sr, x = read_wav(args.predict)
+        feat = extract_time_domain_features(x, sr)
+
+        # 3. 标准化（必须和训练时用同一个 scaler！）
+        feat_scaled = scaler.transform(feat.reshape(1, -1))
+
+        # 4. 预测
+        prediction = best_clf.predict(feat_scaled)[0]
+        print(f"🎯 识别结果：该音频是数字 【{prediction}】")
         return
 
     # 单文件分析模式
@@ -559,7 +592,7 @@ def main():
             plot_analysis(x, sr, info, title=os.path.basename(args.analyze))
         return
 
-    # 训练与识别模式
+    # 训练与识别模式（默认模式）
     X, y, files = load_dataset(args.data_dir)
     print(f"共加载 {len(y)} 个样本，特征维度：{X.shape[1]}")
 
